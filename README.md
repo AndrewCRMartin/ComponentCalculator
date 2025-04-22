@@ -21,5 +21,5 @@ of components by optimizing a function of the accuracy and the
 similarity of values used. Having the values closer to one another
 allows you to exploit the statistics of the distributions of values
 for a given tolerance which improves the overall tolerance of a random
-pair of compnents (see Douglas Self's book on Small Signal
+pair of components (see Douglas Self's book on Small Signal
 Amplifiers).
