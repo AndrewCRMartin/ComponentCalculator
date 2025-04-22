@@ -1,8 +1,10 @@
 #include <math.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "bioplib/MathType.h"
 #include "bioplib/SysDefs.h"
+#include "bioplib/macros.h"
 
 REAL e3Base[]  = {1.0, 2.2, 4.7};
 REAL e6Base[]  = {1.0, 1.5, 2.2, 3.3, 4.7, 6.8};
@@ -51,6 +53,103 @@ REAL e192Base[] = {1.00, 1.01, 1.02, 1.04, 1.05, 1.06, 1.07, 1.09, 1.10,
                    8.66, 8.76, 8.87, 8.98, 9.09, 9.20, 9.31, 9.42, 9.53,
                    9.65, 9.76, 9.88};
 
+
+typedef struct _gene
+{
+   REAL *values;
+   int  *operators; /* Note, the first operator is ignored */
+   int  NComp;
+} GENE;
+
+typedef struct _eval
+{
+   REAL value,
+        error,
+        percentageError,
+        compDifference,
+        score;
+} EVAL;
+      
+#define OP_PARALLEL 0
+#define OP_SERIES   1
+#define TYPE_CAP    0
+#define TYPE_RES    1
+
+/***********************************************************************/
+REAL PickRandomEValue(REAL *values, int NValues)
+{
+   int offset = rand() % NValues;
+   return(values[offset]);
+}
+
+int PickRandomOperator(void)
+{
+   int offset = rand() % 2;
+   return(offset?OP_SERIES:OP_PARALLEL);
+}
+
+int PickRandomComponentNumber(int minNum, int maxNum)
+{
+   return(rand() % (maxNum + 1 - minNum) + minNum);
+}
+
+/***********************************************************************/
+GENE *InitializePopulation(int NGenes, int minComponents,
+                           int maxComponents,
+                           REAL *values, int NValues)
+{
+   GENE *genes = NULL;
+   BOOL error = FALSE;
+   int  i;
+   
+   /* Allocate memory for the array of genes */
+   if((genes = (GENE *)malloc(NGenes * sizeof(GENE)))==NULL)
+      return(NULL);
+
+   /* Allocate memory for each gene */
+   for(i=0; i<NGenes; i++)
+   {
+      if((genes[i].values =
+          (REAL *)malloc(maxComponents * sizeof(REAL)))==NULL)
+      {
+         error=TRUE;
+         break;
+      }
+
+      if((genes[i].operators =
+          (int *)malloc(maxComponents * sizeof(int)))==NULL)
+      {
+         error=TRUE;
+         break;
+      }
+   }
+
+   if(error)
+   {
+      /* TODO: free up memory of items in the genes on error */
+      FREE(genes);
+      return(NULL);
+   }
+
+   /* Populate the genes with random values */
+   for(i=0; i<NGenes; i++)
+   {
+      int j;
+
+      genes[i].NComp = PickRandomComponentNumber(minComponents,
+                                                 maxComponents);
+
+      for(j=0; j<genes[i].NComp; j++)
+      {
+         genes[i].values[j]    = PickRandomEValue(values, NValues);
+         genes[i].operators[j] = PickRandomOperator();
+      }
+   }
+
+   return(genes);
+}
+   
+
 /***********************************************************************/
 REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
                       REAL lowPower, REAL highPower)
@@ -58,7 +157,7 @@ REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
    int i, j, power;
    int NRanges = (highPower-lowPower)+1;
    REAL *eValues = NULL;
-
+   
    /* Calculate values in the whole series between 1R and 10M */
    *NValues = 1 + (NRanges * numberInSeries);
    /* Allocate space */
@@ -81,14 +180,95 @@ REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
    return(eValues);
 }
 
+EVAL EvaluateGene(GENE *gene, int type, REAL target)
+{
+   int i;
+   REAL value = gene->values[0];
+   EVAL eval;
+   REAL compDiff = 0.0;
+   int  NPairs = 0;
 
+   for(i=1; i<gene->NComp; i++)
+   {
+      /* Resistors in series or caps in parallel                       */
+      if(((type == TYPE_RES) && (gene->operators[i] == OP_SERIES)) ||
+         ((type == TYPE_CAP) && (gene->operators[i] == OP_PARALLEL)))
+      {
+         value += gene->values[i];
+      }
+      else /* Resistors in parallel or caps in series                  */
+      {
+         value = 1/((1/value) + (1/gene->values[i]));
+      }
+   }
+
+   for(i=0; i<gene->NComp; i++)
+   {
+      int j;
+      for(j=i+1; j<gene->NComp; j++)
+      {
+         compDiff += fabs(gene->values[i] - gene->values[j]) /
+            MAX(gene->values[i], gene->values[j]);
+         NPairs++;
+      }
+   }
+   
+   eval.value = value;
+   eval.error = fabs(value - target);
+   eval.percentageError = 100*(eval.error/target);
+   if(gene->NComp == 1)
+      eval.compDifference = 0;
+   else
+      eval.compDifference = compDiff / NPairs;
+
+   /* To optimize.... */
+   eval.score = 10 * eval.percentageError + eval.compDifference;
+
+   return(eval);
+}
+
+
+/***********************************************************************/
 int main(int argc, char **argv)
 {
-   int NValues, i;
+   int NValues, i, j;
+   int NGenes = 100;
+   int minComponents = 1;
+   int maxComponents = 5;
    REAL *values = PopulateESeries(e3Base, 3, &NValues, 0, 6);
+   GENE *genes = NULL;
+   EVAL eCap, eRes;
+
+   srand(time(NULL));
 
    for(i=0; i<NValues; i++)
       printf("%.2f\n", values[i]);
 
+   genes = InitializePopulation(NGenes, minComponents, maxComponents,
+                                values, NValues);
+
+   for(i=0; i<NGenes; i++)
+   {
+      printf("%3d: ", i);
+      for(j=0; j<genes[i].NComp; j++)
+      {
+         printf("[%.1f %s] ",
+                genes[i].values[j],
+                (genes[i].operators[j]==OP_SERIES?"PAR":"SER"));
+      }
+      printf("\n");
+      
+      eRes = EvaluateGene(&(genes[i]), TYPE_RES, 100.0);
+      eCap = EvaluateGene(&(genes[i]), TYPE_CAP, 100.0);
+      
+      printf("   RES: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
+             eRes.value, eRes.score, eRes.error, eRes.percentageError,
+             eRes.compDifference);
+      printf("   CAP: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
+             eCap.value, eCap.score, eCap.error, eCap.percentageError,
+             eCap.compDifference);
+}
+   
+   
    return(0);
 }
