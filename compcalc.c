@@ -228,47 +228,113 @@ EVAL EvaluateGene(GENE *gene, int type, REAL target)
 }
 
 
+/* holds the address of the array of which the sorted index
+ * order needs to be found
+ */
+int * base_arr = NULL;
+/* Note how the compare function compares the values of the
+ * array to be sorted. The passed value to this function
+ * by `qsort' are actually the `idx' array elements.
+ */
+
+static REAL *scores = NULL;
+
+int compareScores(const void *a, const void *b)
+{
+    int aa = *((int *) a),
+        bb = *((int *) b);
+
+    if (scores[aa] < scores[bb])
+    {
+       return -1;
+    }
+    else if (scores[aa] == scores[bb])
+    {
+       return 0;
+    }
+
+    return 1;
+}
+
+int *RankPopulation(GENE *genes, int NGenes, int type, REAL target)
+{
+   int *idx = NULL,
+      i;
+
+   /* Allocate memory for the index                                    */
+   if((idx = (int *)malloc(NGenes * sizeof(int)))==NULL)
+      return(NULL);
+
+   /* Allocate memory for the scores                                   */
+   if((scores = (REAL *)malloc(NGenes * sizeof(REAL)))==NULL)
+   {
+      FREE(idx);
+      return(NULL);
+   }
+
+   /* Populate the scores and initialize the index                     */
+   for(i=0; i<NGenes; i++)
+   {
+      EVAL eval;
+      eval = EvaluateGene(&(genes[i]), type, target);
+      scores[i] = eval.score;
+      idx[i] = i;
+   }
+
+   /* Perform the sort on the index                                    */
+   qsort(idx, NGenes, sizeof(int), compareScores);
+   FREE(scores);
+
+   return idx;
+}
+
 /***********************************************************************/
 int main(int argc, char **argv)
 {
-   int NValues, i, j;
+   int NValues, i, j, k;
    int NGenes = 100;
    int minComponents = 1;
    int maxComponents = 5;
+   int type = TYPE_RES;
    REAL *values = PopulateESeries(e3Base, 3, &NValues, 0, 6);
    GENE *genes = NULL;
-   EVAL eCap, eRes;
+   EVAL eval;
+   REAL target = 100.0;
+   int  *rank = NULL;
 
    srand(time(NULL));
 
+/*
    for(i=0; i<NValues; i++)
       printf("%.2f\n", values[i]);
+*/
 
    genes = InitializePopulation(NGenes, minComponents, maxComponents,
                                 values, NValues);
 
+   rank = RankPopulation(genes, NGenes, type, target);
+
+
    for(i=0; i<NGenes; i++)
    {
-      printf("%3d: ", i);
-      for(j=0; j<genes[i].NComp; j++)
+      j=rank[i];
+      printf("%3d: ", j);
+      for(k=0; k<genes[j].NComp; k++)
       {
          printf("[%.1f %s] ",
-                genes[i].values[j],
-                (genes[i].operators[j]==OP_SERIES?"PAR":"SER"));
+                genes[j].values[k],
+                (genes[j].operators[k]==OP_SERIES?"PAR":"SER"));
       }
       printf("\n");
       
-      eRes = EvaluateGene(&(genes[i]), TYPE_RES, 100.0);
-      eCap = EvaluateGene(&(genes[i]), TYPE_CAP, 100.0);
+      eval = EvaluateGene(&(genes[j]), type, target);
       
-      printf("   RES: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
-             eRes.value, eRes.score, eRes.error, eRes.percentageError,
-             eRes.compDifference);
-      printf("   CAP: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
-             eCap.value, eCap.score, eCap.error, eCap.percentageError,
-             eCap.compDifference);
-}
-   
+      printf("   EVAL: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
+             eval.value, eval.score, eval.error, eval.percentageError,
+             eval.compDifference);
+   }
+
+   FREE(rank);
    
    return(0);
 }
