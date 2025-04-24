@@ -1,7 +1,22 @@
 ComponentCalculator
 ===================
 
-## VERY EARLY INITIAL CODE - CURRENTLY JUST INITIALIZATION
+## EARLY INITIAL CODE - VERY BASIC FUNCTIONALITY
+
+### TODO:
+
+- add command line options
+- increase probability of altering component count if we are targeting
+  low or high
+- add sexual repro
+- optimize probabilities
+- optimize score function
+- proper output display
+- display values better
+- default population size needs to change with E series
+- adaptive mutation of values
+
+-------------------------------------------------------------------------
 
 (c) 2025, Andrew C.R. Martin
 
