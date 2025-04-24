@@ -1,34 +1,5 @@
-#define _GNU_SOURCE 1
-#include <math.h>
-#include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include "bioplib/MathType.h"
-#include "bioplib/SysDefs.h"
-#include "bioplib/macros.h"
+#include "compcalc.h"
 
-#include "eseries.h"
-
-typedef struct _gene
-{
-   REAL *values;
-   int  *operators; /* Note, the first operator is ignored             */
-   int  NComp;
-} GENE;
-
-typedef struct _eval
-{
-   REAL value,
-        error,
-        percentageError,
-        compDifference,
-        score;
-} EVAL;
-      
-#define OP_PARALLEL 0
-#define OP_SERIES   1
-#define TYPE_CAP    0
-#define TYPE_RES    1
 
 /***********************************************************************/
 REAL PickRandomEValue(REAL *values, int NValues)
@@ -66,6 +37,8 @@ GENE *InitializePopulation(int NGenes, int minComponents,
    /* Allocate memory for each gene                                    */
    for(i=0; i<NGenes; i++)
    {
+      genes[i].minComp = minComponents;
+      genes[i].maxComp = maxComponents;
       if((genes[i].values =
           (REAL *)malloc(maxComponents * sizeof(REAL)))==NULL)
       {
@@ -140,20 +113,35 @@ REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
 
 
 /***********************************************************************/
-EVAL EvaluateGene(GENE *gene, int type, REAL target)
+EVAL EvaluateGene(GENE *gene, int type, REAL target, int compTarget)
 {
    int  i,
         NPairs   = 0;
-   REAL value    = gene->values[0],
+   REAL value,
         compDiff;
    EVAL eval;
 
+   value = gene->values[0];
+#ifdef DEBUG
+   fprintf(stderr, "Type = %s\n", (type==TYPE_RES)?"Res":"Cap");
+   fprintf(stderr, "Value[0] = %f\n", value);
+#endif
    for(i=1; i<gene->NComp; i++)
    {
+#ifdef DEBUG
+      fprintf(stderr, "Value[%d] = %f ", i, gene->values[i]);
+      fprintf(stderr, "in %s\n",
+              (gene->operators[i]==OP_SERIES)?"Series":"Parallel");
+#endif
+      
       /* Resistors in series or caps in parallel                       */
       if(((type == TYPE_RES) && (gene->operators[i] == OP_SERIES)) ||
          ((type == TYPE_CAP) && (gene->operators[i] == OP_PARALLEL)))
       {
+#ifdef DEBUG
+         fprintf(stderr, "Adding series value %f to %f\n",
+                 gene->values[i], value);
+#endif
          value += gene->values[i];
       }
       else /* Resistors in parallel or caps in series                  */
@@ -186,6 +174,17 @@ EVAL EvaluateGene(GENE *gene, int type, REAL target)
 
    /* To optimize....                                                  */
    eval.score = 10 * eval.percentageError + eval.compDifference;
+   switch(compTarget)
+   {
+   case CT_LOW:
+      eval.score += gene->NComp - gene->minComp;
+      break;
+   case CT_HIGH:
+      eval.score += gene->maxComp - gene->NComp;
+      break;
+   default:
+      break;
+   }
 
    return(eval);
 }
@@ -219,7 +218,8 @@ int compareScores(const void *a, const void *b)
 
 
 /***********************************************************************/
-int *RankPopulation(GENE *genes, int NGenes, int type, REAL target)
+int *RankPopulation(GENE *genes, int NGenes, int type, REAL target,
+                    int compTarget)
 {
    int *idx = NULL,
         i;
@@ -243,7 +243,7 @@ int *RankPopulation(GENE *genes, int NGenes, int type, REAL target)
    {
       EVAL eval;
 
-      eval      = EvaluateGene(&(genes[i]), type, target);
+      eval      = EvaluateGene(&(genes[i]), type, target, compTarget);
       scores[i] = eval.score;
       idx[i]    = i;
    }
@@ -260,60 +260,65 @@ int *RankPopulation(GENE *genes, int NGenes, int type, REAL target)
    return idx;
 }
 
-/***********************************************************************/
-int main(int argc, char **argv)
+void MutateValue(GENE gene, REAL *values, int NValues)
 {
-   int  NValues,
-        i, j, k,
-        *rank = NULL,
-        NGenes = 100,
-        minComponents = 1,
-        maxComponents = 5,
-        type = TYPE_RES;
-   REAL *values = NULL,
-        target = 100.0;
-   GENE *genes = NULL;
-   EVAL eval;
+   int component = rand() % gene.NComp;
+   gene.values[component] = PickRandomEValue(values, NValues);
+}
 
-   srand(time(NULL));
-
-   if((values = PopulateESeries(e3Base, 3, &NValues, 0, 6))==NULL)
+void MutateOperator(GENE gene)
+{
+   /* 10% chance                                                       */
+   if((rand() % 100) > 89)
    {
-      return(1);
+      /* Swap the operator for a random component                      */
+      int component = rand() % gene.NComp;
+      gene.operators[component] = gene.operators[component]==0?1:0;
    }
-   
-#ifdef DEBUG
-   for(i=0; i<NValues; i++)
-      fprintf(stderr, "%.2f ", values[i]);
-   fprintf(stderr,"\n");
-#endif
+}
 
-   genes = InitializePopulation(NGenes, minComponents, maxComponents,
-                                values, NValues);
+void  MutateNumberOfComponents(GENE gene, int minComp, int maxComp)
+{
+   /* 5% chance                                                        */
+   if((rand() % 100) > 94)
+   {
+      if((gene.NComp == minComp) && (gene.NComp != maxComp))
+      {
+         gene.NComp++;
+      }
+      else if((gene.NComp == maxComp) && (gene.NComp != minComp))
+      {
+         gene.NComp--;
+      }
+      else
+      {
+         if(rand() % 2)
+            gene.NComp++;
+         else
+            gene.NComp--;
+      }
+   }
+}
 
-   rank = RankPopulation(genes, NGenes, type, target);
+/***********************************************************************/
+void MutatePopulation(GENE *genes, int NGenes, int *rank,
+                      int minComp, int maxComp,
+                      REAL *values, int NValues)
+{
+   int i, j,
+       replaceFrom = NGenes/2 - 1;
 
+   /* Copy the best half to the worst half                             */
+   for(i=0; i<replaceFrom; i++)
+      genes[rank[i+replaceFrom]] = genes[rank[i]];
 
-   for(i=0; i<NGenes; i++)
+   /* Mutate the second half                                           */
+   for(i=replaceFrom; i<NGenes; i++)
    {
       j=rank[i];
-      printf("%3d: ", j);
-      for(k=0; k<genes[j].NComp; k++)
-      {
-         printf("[%.1f %s] ",
-                genes[j].values[k],
-                (genes[j].operators[k]==OP_SERIES?"PAR":"SER"));
-      }
-      printf("\n");
-      
-      eval = EvaluateGene(&(genes[j]), type, target);
-      
-      printf("   EVAL: V=%.1f S=%.1f E=%.1f P=%.1f%% D=%.1f\n",
-             eval.value, eval.score, eval.error, eval.percentageError,
-             eval.compDifference);
+      MutateValue(genes[j], values, NValues);
+      MutateOperator(genes[j]);
+      MutateNumberOfComponents(genes[j], minComp, maxComp);
    }
-
-   FREE(rank);
-   
-   return(0);
 }
+
