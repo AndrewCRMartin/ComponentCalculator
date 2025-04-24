@@ -15,6 +15,7 @@ ComponentCalculator
 - display values better
 - default population size needs to change with E series
 - adaptive mutation of values
+- more intelligent initialization and mutation
 
 -------------------------------------------------------------------------
 
