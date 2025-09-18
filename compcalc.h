@@ -39,9 +39,9 @@ typedef struct _eval
 REAL PickRandomEValue(REAL *values, int NValues);
 int PickRandomOperator(void);
 int PickRandomComponentNumber(int minNum, int maxNum);
-GENE *InitializePopulation(int NGenes, int minComponents,
+GENE *InitializePopulation(ULONG NGenes, int minComponents,
                            int maxComponents,
-                           REAL *values, int NValues);
+                           REAL *values, int NValues, BOOL initVals);
 REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
                       REAL lowPower, REAL highPower);
 EVAL EvaluateGene(GENE *gene, int type, REAL target, int compTarget);
@@ -50,11 +50,11 @@ int compareScores(const void *a, const void *b, void *vScores);
 #else
 int compareScores(const void *a, const void *b);
 #endif
-int *RankPopulation(GENE *genes, int NGenes, int type, REAL target,
+ULONG *RankPopulation(GENE *genes, ULONG NGenes, int type, REAL target,
                     int compTarget);
 void MutateValue(GENE gene, REAL *values, int NValues);
 void MutateOperator(GENE gene);
 void  MutateNumberOfComponents(GENE gene, int minComp, int maxComp);
-void MutatePopulation(GENE *genes, int NGenes, int *rank,
+void MutatePopulation(GENE *genes, ULONG NGenes, int *rank,
                       int minComp, int maxComp,
                       REAL *values, int NValues);

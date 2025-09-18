@@ -1,3 +1,10 @@
+#ifdef _MAIN_
+#define EXTERN
+#else
+#define EXTERN extern
+#endif
+
+#ifdef _MAIN_
 REAL e3Base[]  = {1.0, 2.2, 4.7};
 REAL e6Base[]  = {1.0, 1.5, 2.2, 3.3, 4.7, 6.8};
 REAL e12Base[] = {1.0, 1.2, 1.5, 1.8, 2.2, 2.7,
@@ -44,4 +51,7 @@ REAL e192Base[] = {1.00, 1.01, 1.02, 1.04, 1.05, 1.06, 1.07, 1.09, 1.10,
                    7.77, 7.87, 7.96, 8.06, 8.16, 8.25, 8.35, 8.45, 8.56,
                    8.66, 8.76, 8.87, 8.98, 9.09, 9.20, 9.31, 9.42, 9.53,
                    9.65, 9.76, 9.88};
+#endif
 
+EXTERN REAL *PopulateESeries(REAL *eBase, int numberInSeries, int *NValues,
+                      REAL lowPower, REAL highPower);

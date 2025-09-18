@@ -22,13 +22,14 @@ int PickRandomComponentNumber(int minNum, int maxNum)
 }
 
 /***********************************************************************/
-GENE *InitializePopulation(int NGenes, int minComponents,
+GENE *InitializePopulation(ULONG NGenes, int minComponents,
                            int maxComponents,
-                           REAL *values, int NValues)
+                           REAL *values, int NValues,
+                           BOOL setVals)
 {
    GENE *genes = NULL;
    BOOL error = FALSE;
-   int  i;
+   ULONG  i;
    
    /* Allocate memory for the array of genes                           */
    if((genes = (GENE *)malloc(NGenes * sizeof(GENE)))==NULL)
@@ -65,13 +66,15 @@ GENE *InitializePopulation(int NGenes, int minComponents,
    for(i=0; i<NGenes; i++)
    {
       int j;
-
+      
       genes[i].NComp = PickRandomComponentNumber(minComponents,
                                                  maxComponents);
-
+      
       for(j=0; j<genes[i].NComp; j++)
       {
-         genes[i].values[j]    = PickRandomEValue(values, NValues);
+         if(setVals)
+            genes[i].values[j] = PickRandomEValue(values, NValues);
+
          genes[i].operators[j] = PickRandomOperator();
       }
    }
@@ -142,11 +145,13 @@ EVAL EvaluateGene(GENE *gene, int type, REAL target, int compTarget)
          fprintf(stderr, "Adding series value %f to %f\n",
                  gene->values[i], value);
 #endif
-         value += gene->values[i];
+         if(gene->values[i] > 0.0)
+            value += gene->values[i];
       }
       else /* Resistors in parallel or caps in series                  */
       {
-         value = 1/((1/value) + (1/gene->values[i]));
+         if(gene->values[i] > 0.0)
+            value = 1/((1/value) + (1/gene->values[i]));
       }
    }
 
@@ -155,12 +160,18 @@ EVAL EvaluateGene(GENE *gene, int type, REAL target, int compTarget)
    for(i=0; i<gene->NComp; i++)
    {
       int j;
-      
-      for(j=i+1; j<gene->NComp; j++)
+
+      if(gene->values[i] > 0.0)
       {
-         compDiff += fabs(gene->values[i] - gene->values[j]) /
-            MAX(gene->values[i], gene->values[j]);
-         NPairs++;
+         for(j=i+1; j<gene->NComp; j++)
+         {
+            if(gene->values[j] > 0.0)
+            {
+               compDiff += fabs(gene->values[i] - gene->values[j]) /
+                  MAX(gene->values[i], gene->values[j]);
+               NPairs++;
+            }
+         }
       }
    }
    
@@ -218,17 +229,17 @@ int compareScores(const void *a, const void *b)
 
 
 /***********************************************************************/
-int *RankPopulation(GENE *genes, int NGenes, int type, REAL target,
-                    int compTarget)
+ULONG *RankPopulation(GENE *genes, ULONG NGenes, int type, REAL target,
+                      int compTarget)
 {
-   int *idx = NULL,
-        i;
+   ULONG *idx = NULL,
+         i;
 #ifdef _GNU_SOURCE
    REAL *scores = NULL;
 #endif
 
    /* Allocate memory for the index                                    */
-   if((idx = (int *)malloc(NGenes * sizeof(int)))==NULL)
+   if((idx = (ULONG *)malloc(NGenes * sizeof(int)))==NULL)
       return(NULL);
 
    /* Allocate memory for the scores                                   */
@@ -250,9 +261,9 @@ int *RankPopulation(GENE *genes, int NGenes, int type, REAL target,
 
    /* Perform the sort on the index                                    */
 #ifdef _GNU_SOURCE
-   qsort_r(idx, NGenes, sizeof(int), compareScores, scores);
+   qsort_r(idx, NGenes, sizeof(ULONG), compareScores, scores);
 #else
-   qsort(idx, NGenes, sizeof(int), compareScores);
+   qsort(idx, NGenes, sizeof(ULONG), compareScores);
 #endif
    
    FREE(scores);
@@ -301,12 +312,12 @@ void  MutateNumberOfComponents(GENE gene, int minComp, int maxComp)
 }
 
 /***********************************************************************/
-void MutatePopulation(GENE *genes, int NGenes, int *rank,
+void MutatePopulation(GENE *genes, ULONG NGenes, int *rank,
                       int minComp, int maxComp,
                       REAL *values, int NValues)
 {
-   int i, j,
-       replaceFrom = NGenes/2 - 1;
+   ULONG i, j,
+      replaceFrom = NGenes/2 - 1;
 
    /* Copy the best half to the worst half                             */
    for(i=0; i<replaceFrom; i++)
